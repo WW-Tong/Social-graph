@@ -11,7 +11,7 @@ from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 import random
 import torch.optim as optim
-
+import math
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from numpy import linalg as LA
@@ -135,8 +135,9 @@ def gan_g_loss(scores_fake):
     return bce_loss(scores_fake, y_fake)
 
 def gan_d_loss(scores_real, scores_fake):
-    y_real = torch.ones_like(scores_real) * random.uniform(0.7, 1.2)    # 真实数据在1左右
-    y_fake = torch.zeros_like(scores_fake) * random.uniform(0, 0.3)     # 预测数据在0左右
+    # y_real = torch.ones_like(scores_real) * random.uniform(0.7, 1.2)    # 真实数据在1左右
+    y_real = torch.ones_like(scores_real) * random.uniform(0.7, 1.2)
+    y_fake = torch.zeros_like(scores_fake) *random.uniform(0.0, 0.3)     # 预测数据在0左右
     loss_real = bce_loss(scores_real, y_real)
     loss_fake = bce_loss(scores_fake, y_fake)
     return loss_real + loss_fake
@@ -145,12 +146,17 @@ def l2_loss(pred_traj, pred_traj_gt, mode='average'):       # TVC  NVCT
     pred_traj_gt=torch.squeeze(pred_traj_gt)    # VCT
     seq_len, batch, _ = pred_traj.size()        # T V C
     loss = (pred_traj_gt.permute(0, 2, 1) - pred_traj.permute(1, 0, 2))**2  #        V T C
+    step_loss=torch.zeros(seq_len)
+        
+    for i in range(seq_len):
+        step_loss[i]=math.exp((i+1)/20)
     if mode == 'sum':
         return torch.sum(loss)
     elif mode == 'average':
         return torch.sum(loss) / (seq_len * batch)
     elif mode == 'raw':
-        return loss.sum(dim=2).sum(dim=1)   # V
+        # return loss.sum(dim=2).sum(dim=1)   # VTC
+        return (loss.sum(dim=2))*step_loss   #  VT*T
 
 def displacement_error(pred_traj, pred_traj_gt, mode='sum'):
     '''
@@ -169,7 +175,24 @@ def displacement_error(pred_traj, pred_traj_gt, mode='sum'):
         return torch.sum(loss)
     elif mode == 'raw':
         return loss
+def ade(obs_traj_rel,pred_traj, pred_traj_gt, mode='sum'):
+    '''
+    计算位移误差总和
+    :param pred_traj: 预测结果 T V C
+    :param pred_traj_gt: 实际路径 N V C T
+    :param mode:
+    :return:
+    '''
 
+    seq_len, _, _ = pred_traj.size()    # 12
+    pred_traj_gt=torch.squeeze(pred_traj_gt)    # VCT
+    loss = pred_traj_gt.permute(0, 2, 1) - pred_traj.permute(1, 0, 2)   # V T C
+    loss = loss**2      # 平方差
+    loss = torch.sqrt(loss.sum(dim=2)).sum(dim=1)   # V 平方根
+    if mode == 'sum':
+        return torch.sum(loss)
+    elif mode == 'raw':
+        return loss
 def final_displacement_error(
     pred_pos, pred_pos_gt, mode='sum'
 ):
@@ -342,13 +365,11 @@ class TrajectoryDataset(Dataset):
         ]
         return out
 #test loader
-das=TrajectoryDataset(data_dir="./datasets/eth/test")
-loader=DataLoader(das,1,shuffle=False)
-for step,(obs,pre,obs_re,pred_re,non,los,vo,ao,vp,ap,vgg) in enumerate(loader):
-    print(obs.shape)
-    print(obs_re.shape)
-    print(vo.shape)
-    print(ao.shape)
-    print(vgg.shape)
-    print("ok")
-    break
+# das=TrajectoryDataset(data_dir="./datasets/eth/test")
+# loader=DataLoader(das,1,shuffle=False)
+# for step,(obs,pre,obs_re,pred_re,non,los,vo,ao,vp,ap,vgg) in enumerate(loader):
+#     print(obs.shape)
+#     print(pre.shape)
+#     print(vo.shape)
+#     print(vgg.shape)
+#     print("ok")

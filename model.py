@@ -12,7 +12,7 @@ from torch.nn.modules.module import Module
 from constants import *
 import torch.optim as optim
 # from utils import seq_to_graph
-from tensorboardX import SummaryWriter
+
 
 
 class ConvTemporalGraphical(nn.Module):         # 时空图
@@ -96,7 +96,7 @@ class st_gcn(nn.Module):
                  kernel_size,
                  use_mdn = False,
                  stride=1,
-                 dropout=0,
+                 dropout=DROPOUT,
                  residual=True):
         super(st_gcn,self).__init__()
         
@@ -156,7 +156,7 @@ class st_gcn(nn.Module):
 
         return x, A
 
-def make_mlp(dim_list):
+def make_mlp(dim_list,dropout=False):
     '''
     批量生成全连接层
     :param dim_list: 维度列表
@@ -166,6 +166,8 @@ def make_mlp(dim_list):
     for dim_in, dim_out in zip(dim_list[:-1], dim_list[1:]):
         layers.append(nn.Linear(dim_in, dim_out))
         layers.append(nn.ReLU())
+        if dropout :
+            layers.append(nn.Dropout(p=DROPOUT))
     return nn.Sequential(*layers)
 
 def get_noise(shape):
@@ -216,7 +218,7 @@ class Decoder(nn.Module):
         self.decoder = nn.LSTM(self.embedding_dim, self.h_dim, 1)   # 输入为16 ，输出为64 ，1层隐藏层
         self.spatial_embedding = nn.Linear(2, self.embedding_dim)   # 输入2输出16
         self.hidden2pos = nn.Linear(self.h_dim, 2)                  # 转换为坐标序列 输入64，输出2
-        self.Endpoint=EndpointGenerate()
+        # self.Endpoint=EndpointGenerate()
     def forward(self, last_pos, last_pos_rel, state_tuple,obs_traj,obs_traj_rel):
         npeds = last_pos.size(0)           # 人数  N V C
         pred_traj_fake_rel = []             
@@ -233,9 +235,9 @@ class Decoder(nn.Module):
             pred_traj_fake_rel.append(rel_pos.view(npeds, -1))   # 预测轨迹加入rel_pos　N,C  12*N*2
             last_pos = curr_pos  # 当前坐标作为最后坐标
 
-        endpoint=self.Endpoint(obs_traj,obs_traj_rel)
+        # endpoint=self.Endpoint(obs_traj,obs_traj_rel)
         pred_traj_fake_rel = torch.stack(pred_traj_fake_rel, dim=0)     # 按0维拼接
-        pred_traj_fake_rel[-1]=endpoint     # 将预测终点加入
+        # pred_traj_fake_rel[-1]=endpoint     # 将预测终点加入
         return pred_traj_fake_rel       # 12*N*2
 class EndpointGenerate(nn.Module):
     def __init__(self):
@@ -383,7 +385,10 @@ class TrajectoryDiscriminator(nn.Module):
         self.spatial_embedding = nn.Linear(2, self.embedding_dim)           # 输入2维，输出embedding_dim    
         self.encoder = nn.LSTM(self.embedding_dim,self.h_dim,1)    # 调用编码器
         real_classifier_dims = [self.h_dim, self.mlp_dim, 1]   # 64，64，1
-        self.real_classifier = make_mlp(real_classifier_dims)  # 感知机64--1
+        # self.temp = nn.Linear(self.h_dim,self.mlp_dim)
+        # self.re = nn.LeakyReLU()
+        self.real_classifier = nn.Linear(self.mlp_dim,1)  # 感知机64--1
+        # self.re2 = nn.Sigmoid()
 
     def init_hidden(self, batch):
         '''
@@ -404,9 +409,11 @@ class TrajectoryDiscriminator(nn.Module):
         state=self.init_hidden(npeds)
         output,state=self.encoder(traj_embedding,state)
         final_h=state[0]    # V H
-        scores = self.real_classifier(final_h)  # V H ——V 1
+        # scores = self.temp(final_h)  # V H ——V 1
+        # scores =self.re(scores)
+        scores = self.real_classifier(final_h)
+        # scores =self.re2(scores)
         return scores
 
-
-ph=TrajectoryGenerator()
+# ph=TrajectoryGenerator()
 # print(ph)
